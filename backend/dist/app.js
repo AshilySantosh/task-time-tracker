@@ -7,6 +7,7 @@ const express_1 = __importDefault(require("express"));
 const cookie_parser_1 = __importDefault(require("cookie-parser"));
 const auth_routes_1 = __importDefault(require("./routes/auth.routes"));
 const task_routes_1 = __importDefault(require("./routes/task.routes"));
+const time_log_routes_1 = __importDefault(require("./routes/time-log.routes"));
 const app = (0, express_1.default)();
 app.use(express_1.default.json());
 app.use((0, cookie_parser_1.default)());
@@ -18,4 +19,5 @@ app.get("/health", (_req, res) => {
 });
 app.use("/api/auth", auth_routes_1.default);
 app.use("/api/tasks", task_routes_1.default);
+app.use("/api/time-logs", time_log_routes_1.default);
 exports.default = app;
