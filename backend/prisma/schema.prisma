@@ -1,0 +1,67 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+// Get a free hosted Postgres database in seconds: `npx create-db`
+
+generator client {
+  provider = "prisma-client"
+  output   = "../src/generated/prisma"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+enum TaskStatus {
+  PENDING
+  IN_PROGRESS
+  COMPLETED
+}
+
+model User {
+  id           String   @id @default(uuid())
+  name         String
+  email        String   @unique
+  passwordHash String
+
+  tasks        Task[]
+  timeLogs     TimeLog[]
+
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+}
+
+model Task {
+  id          String     @id @default(uuid())
+  userId      String
+
+  title       String
+  description String?
+  status      TaskStatus @default(PENDING)
+
+  user        User       @relation(fields: [userId], references: [id], onDelete: Cascade)
+  timeLogs    TimeLog[]
+
+  createdAt   DateTime   @default(now())
+  updatedAt   DateTime   @updatedAt
+
+  @@index([userId])
+}
+
+model TimeLog {
+  id        String    @id @default(uuid())
+  taskId    String
+  userId    String
+
+  startedAt DateTime
+  endedAt   DateTime?
+  duration  Int?
+
+  task      Task      @relation(fields: [taskId], references: [id], onDelete: Cascade)
+  user      User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  createdAt DateTime  @default(now())
+
+  @@index([taskId])
+  @@index([userId])
+}
