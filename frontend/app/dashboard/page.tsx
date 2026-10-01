@@ -647,7 +647,46 @@ if (timeResponse.ok) {
   // Dashboard
   // -------------------------
   return (
+    
     <main className="min-h-screen bg-slate-950 text-white">
+      {activeTaskId && (
+  <div className="fixed bottom-6 left-1/2 z-50 w-[calc(100%-2rem)] max-w-xl -translate-x-1/2">
+    <div className="flex items-center justify-between gap-4 rounded-2xl border border-green-500/30 bg-slate-900/95 px-5 py-4 shadow-2xl shadow-black/40 backdrop-blur-md">
+      
+      <div className="flex min-w-0 items-center gap-3">
+        <div className="relative flex h-3 w-3 shrink-0">
+          <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-green-400 opacity-75"></span>
+          <span className="relative inline-flex h-3 w-3 rounded-full bg-green-500"></span>
+        </div>
+
+        <div className="min-w-0">
+          <p className="text-xs text-slate-400">
+            Timer Running
+          </p>
+
+          <p className="truncate text-sm font-medium text-white">
+            {tasks.find((task) => task.id === activeTaskId)?.title}
+          </p>
+        </div>
+      </div>
+
+      <div className="flex shrink-0 items-center gap-3">
+        <span className="font-mono text-lg font-semibold text-green-400">
+          {formatTimer(timerSeconds)}
+        </span>
+
+        <button
+          onClick={() => handleStopTimer(activeTaskId)}
+          disabled={timerLoading}
+          className="rounded-lg bg-red-600 px-4 py-2 text-sm font-medium text-white transition hover:bg-red-500 disabled:cursor-not-allowed disabled:opacity-50"
+        >
+          Stop
+        </button>
+      </div>
+
+    </div>
+  </div>
+)}
       <div className="mx-auto max-w-7xl px-6 py-8">
 
         {/* Header */}

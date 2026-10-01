@@ -1,8 +1,11 @@
 "use client";
 
 import { FormEvent, useState } from "react";
+import { useRouter } from "next/navigation";
 
 export default function SignupPage() {
+  const router = useRouter();
+
   const [name, setName] = useState("");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
@@ -39,8 +42,12 @@ export default function SignupPage() {
         setMessage(data.message || "Signup failed");
         return;
       }
-
-      setMessage("Account created successfully!");
+      
+      setMessage("Account created successfully! Redirecting to login...");
+      
+      setTimeout(() => {
+        router.push("/login");
+      }, 1000);
 
       setName("");
       setEmail("");
