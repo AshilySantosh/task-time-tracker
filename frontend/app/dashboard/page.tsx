@@ -1,6 +1,7 @@
 "use client";
 
 import { FormEvent, useEffect, useState } from "react";
+import { useRouter } from "next/navigation";
 
 interface User {
   id: string;
@@ -24,9 +25,33 @@ interface Task {
   status: "PENDING" | "IN_PROGRESS" | "COMPLETED";
   createdAt: string;
   updatedAt: string;
+  totalTrackedSeconds?: number;
+}
+
+interface TimeLog {
+  id: string;
+  startedAt: string;
+  endedAt: string | null;
+  duration: number | null;
+}
+
+interface WeeklyDay {
+  date: string;
+  day: string;
+  trackedSeconds: number;
+}
+
+interface WeeklySummary {
+  weekStart: string;
+  totalTrackedSeconds: number;
+  tasksWorkedOn: number;
+  completedTasks: number;
+  dailyData: WeeklyDay[];
 }
 
 export default function DashboardPage() {
+  const router = useRouter();
+
   const [user, setUser] = useState<User | null>(null);
   const [summary, setSummary] = useState<DailySummary | null>(null);
   const [tasks, setTasks] = useState<Task[]>([]);
@@ -39,6 +64,17 @@ export default function DashboardPage() {
   const [taskDescription, setTaskDescription] = useState("");
   const [creatingTask, setCreatingTask] = useState(false);
 
+  const [activeTaskId, setActiveTaskId] = useState<string | null>(null);
+  const [timerSeconds, setTimerSeconds] = useState(0);
+  const [timerStartedAt, setTimerStartedAt] = useState<string | null>(null);
+  const [timerLoading, setTimerLoading] = useState(false);
+
+  const [expandedTaskId, setExpandedTaskId] = useState<string | null>(null);
+const [timeLogs, setTimeLogs] = useState<Record<string, TimeLog[]>>({});
+
+const [weeklySummary, setWeeklySummary] =
+  useState<WeeklySummary | null>(null);
+
   useEffect(() => {
     const loadDashboard = async () => {
       try {
@@ -46,7 +82,7 @@ export default function DashboardPage() {
         // Get logged-in user
         // -------------------------
         const userResponse = await fetch(
-          "http://localhost:5000/api/auth/me",
+          `${process.env.NEXT_PUBLIC_API_URL}/api/auth/me`,
           {
             credentials: "include",
           }
@@ -65,7 +101,7 @@ export default function DashboardPage() {
         // Get daily summary
         // -------------------------
         const summaryResponse = await fetch(
-          "http://localhost:5000/api/dashboard/daily-summary",
+          `${process.env.NEXT_PUBLIC_API_URL}/api/dashboard/daily-summary`,
           {
             credentials: "include",
           }
@@ -81,7 +117,7 @@ export default function DashboardPage() {
         // Get user's tasks
         // -------------------------
         const tasksResponse = await fetch(
-          "http://localhost:5000/api/tasks",
+          `${process.env.NEXT_PUBLIC_API_URL}/api/tasks`,
           {
             credentials: "include",
           }
@@ -90,7 +126,37 @@ export default function DashboardPage() {
         const tasksData = await tasksResponse.json();
 
         if (tasksResponse.ok) {
-          setTasks(tasksData.data);
+          const fetchedTasks = tasksData.data as Task[];
+        
+          const tasksWithTime = await Promise.all(
+            fetchedTasks.map(async (task) => {
+              const timeResponse = await fetch(
+                `${process.env.NEXT_PUBLIC_API_URL}/api/tasks/${task.id}/time`,
+                {
+                  credentials: "include",
+                }
+              );
+        
+              if (!timeResponse.ok) {
+                return {
+                  ...task,
+                  totalTrackedSeconds: 0,
+                };
+              }
+        
+              const timeData = await timeResponse.json();
+        
+              return {
+                ...task,
+                totalTrackedSeconds: timeData.data.totalSeconds ?? 0,
+              };
+            })
+          );
+        
+          setTasks(tasksWithTime);
+
+
+          fetchWeeklySummary();
         }
       } catch (error) {
         console.error(error);
@@ -102,6 +168,85 @@ export default function DashboardPage() {
 
     loadDashboard();
   }, []);
+
+  useEffect(() => {
+    if (!timerStartedAt) {
+      return;
+    }
+  
+    const interval = setInterval(() => {
+      const startedAt = new Date(timerStartedAt).getTime();
+      const now = Date.now();
+  
+      const elapsedSeconds = Math.floor(
+        (now - startedAt) / 1000
+      );
+  
+      setTimerSeconds(elapsedSeconds);
+    }, 1000);
+  
+    return () => clearInterval(interval);
+  }, [timerStartedAt]);
+
+  const formatTimer = (seconds: number) => {
+    const hours = Math.floor(seconds / 3600);
+  
+    const minutes = Math.floor(
+      (seconds % 3600) / 60
+    );
+  
+    const remainingSeconds = seconds % 60;
+  
+    return `${String(hours).padStart(2, "0")}:${String(
+      minutes
+    ).padStart(2, "0")}:${String(remainingSeconds).padStart(
+      2,
+      "0"
+    )}`;
+  };
+
+  const formatTotalTime = (seconds: number) => {
+    const hours = Math.floor(seconds / 3600);
+  
+    const minutes = Math.floor(
+      (seconds % 3600) / 60
+    );
+  
+    const remainingSeconds = seconds % 60;
+  
+    if (hours > 0) {
+      return `${hours}h ${minutes}m`;
+    }
+  
+    if (minutes > 0) {
+      return `${minutes}m ${remainingSeconds}s`;
+    }
+  
+    return `${remainingSeconds}s`;
+  };
+
+  const formatWeeklyTime = (seconds: number) => {
+    const hours = Math.floor(seconds / 3600);
+    const minutes = Math.floor((seconds % 3600) / 60);
+  
+    if (hours > 0) {
+      return `${hours}h ${minutes}m`;
+    }
+  
+    return `${minutes}m`;
+  };
+
+  const getMostProductiveDay = () => {
+    if (!weeklySummary?.dailyData.length) {
+      return null;
+    }
+  
+    return weeklySummary.dailyData.reduce((most, current) =>
+      current.trackedSeconds > most.trackedSeconds
+        ? current
+        : most
+    );
+  };
 
   // -------------------------
   // Create Task
@@ -117,7 +262,7 @@ export default function DashboardPage() {
 
     try {
       const response = await fetch(
-        "http://localhost:5000/api/tasks",
+        `${process.env.NEXT_PUBLIC_API_URL}/api/tasks`,
         {
           method: "POST",
           headers: {
@@ -151,7 +296,7 @@ export default function DashboardPage() {
 
       // Refresh dashboard summary
       const summaryResponse = await fetch(
-        "http://localhost:5000/api/dashboard/daily-summary",
+        `${process.env.NEXT_PUBLIC_API_URL}/api/dashboard/daily-summary`,
         {
           credentials: "include",
         }
@@ -179,7 +324,7 @@ const handleUpdateTask = async (
   ) => {
     try {
       const response = await fetch(
-        `http://localhost:5000/api/tasks/${taskId}`,
+        `${process.env.NEXT_PUBLIC_API_URL}/api/tasks/${taskId}`,
         {
           method: "PATCH",
           headers: {
@@ -199,13 +344,18 @@ const handleUpdateTask = async (
   
       setTasks((currentTasks) =>
         currentTasks.map((task) =>
-          task.id === taskId ? data.data : task
+          task.id === taskId
+            ? {
+                ...data.data,
+                totalTrackedSeconds: task.totalTrackedSeconds ?? 0,
+              }
+            : task
         )
       );
   
       // Refresh summary
       const summaryResponse = await fetch(
-        "http://localhost:5000/api/dashboard/daily-summary",
+        `${process.env.NEXT_PUBLIC_API_URL}/api/dashboard/daily-summary`,
         {
           credentials: "include",
         }
@@ -236,7 +386,7 @@ const handleUpdateTask = async (
   
     try {
       const response = await fetch(
-        `http://localhost:5000/api/tasks/${taskId}`,
+        `${process.env.NEXT_PUBLIC_API_URL}/api/tasks/${taskId}`,
         {
           method: "DELETE",
           credentials: "include",
@@ -256,7 +406,7 @@ const handleUpdateTask = async (
   
       // Refresh summary
       const summaryResponse = await fetch(
-        "http://localhost:5000/api/dashboard/daily-summary",
+        `${process.env.NEXT_PUBLIC_API_URL}/api/dashboard/daily-summary`,
         {
           credentials: "include",
         }
@@ -273,6 +423,189 @@ const handleUpdateTask = async (
     }
   };
 
+  const handleStartTimer = async (taskId: string) => {
+    setTimerLoading(true);
+  
+    try {
+      const response = await fetch(
+        `${process.env.NEXT_PUBLIC_API_URL}/api/tasks/${taskId}/start`,
+        {
+          method: "POST",
+          credentials: "include",
+        }
+      );
+  
+      const data = await response.json();
+  
+      if (!response.ok) {
+        alert(data.message || "Failed to start timer");
+        return;
+      }
+  
+      setActiveTaskId(taskId);
+      setTimerStartedAt(data.data.startedAt);
+      setTimerSeconds(0);
+  
+      setTasks((currentTasks) =>
+        currentTasks.map((task) =>
+          task.id === taskId
+            ? { ...task, status: "IN_PROGRESS" }
+            : task
+        )
+      );
+    } catch (error) {
+      console.error(error);
+      alert("Unable to connect to server");
+    } finally {
+      setTimerLoading(false);
+    }
+  };
+
+  const handleStopTimer = async (taskId: string) => {
+    setTimerLoading(true);
+  
+    try {
+      const response = await fetch(
+        `${process.env.NEXT_PUBLIC_API_URL}/api/tasks/${taskId}/stop`,
+        {
+          method: "POST",
+          credentials: "include",
+        }
+      );
+  
+      const data = await response.json();
+  
+      if (!response.ok) {
+        alert(data.message || "Failed to stop timer");
+        return;
+      }
+  
+      setActiveTaskId(null);
+      setTimerStartedAt(null);
+      setTimerSeconds(0);
+  
+      // Refresh tasks
+     // Refresh total tracked time for the stopped task
+
+const timeResponse = await fetch(
+  `${process.env.NEXT_PUBLIC_API_URL}/api/tasks/${taskId}/time`,
+  {
+    credentials: "include",
+  }
+);
+
+const timeData = await timeResponse.json();
+
+if (timeResponse.ok) {
+  setTasks((currentTasks) =>
+    currentTasks.map((task) =>
+      task.id === taskId
+        ? {
+            ...task,
+            totalTrackedSeconds: timeData.data.totalSeconds ?? 0,
+          }
+        : task
+    )
+  );
+}
+  
+      // Refresh summary
+      const summaryResponse = await fetch(
+        `${process.env.NEXT_PUBLIC_API_URL}/api/dashboard/daily-summary`,
+        {
+          credentials: "include",
+        }
+      );
+  
+      const summaryData = await summaryResponse.json();
+  
+      if (summaryResponse.ok) {
+        setSummary(summaryData.data);
+      }
+    } catch (error) {
+      console.error(error);
+      alert("Unable to connect to server");
+    } finally {
+      setTimerLoading(false);
+    }
+  };
+
+  const handleViewTimeLogs = async (taskId: string) => {
+    if (expandedTaskId === taskId) {
+      setExpandedTaskId(null);
+      return;
+    }
+  
+    try {
+      const response = await fetch(
+        `${process.env.NEXT_PUBLIC_API_URL}/api/tasks/${taskId}/time-logs`,
+        {
+          credentials: "include",
+        }
+      );
+  
+      const data = await response.json();
+  
+      if (!response.ok) {
+        alert(data.message || "Failed to load time logs");
+        return;
+      }
+  
+      setTimeLogs((currentLogs) => ({
+        ...currentLogs,
+        [taskId]: data.data,
+      }));
+  
+      setExpandedTaskId(taskId);
+    } catch (error) {
+      console.error(error);
+      alert("Unable to connect to server");
+    }
+  };
+
+  const fetchWeeklySummary = async () => {
+    try {
+      const response = await fetch(
+        `${process.env.NEXT_PUBLIC_API_URL}/api/dashboard/weekly-summary`,
+        {
+          credentials: "include",
+        }
+      );
+  
+      const data = await response.json();
+  
+      if (!response.ok) {
+        console.error(data.message || "Failed to load weekly summary");
+        return;
+      }
+  
+      setWeeklySummary(data.data);
+    } catch (error) {
+      console.error("Failed to load weekly summary:", error);
+    }
+  };
+
+  const handleLogout = async () => {
+    try {
+      const response = await fetch(
+        `${process.env.NEXT_PUBLIC_API_URL}/api/auth/logout`,
+        {
+          method: "POST",
+          credentials: "include",
+        }
+      );
+  
+      if (!response.ok) {
+        alert("Failed to logout");
+        return;
+      }
+  
+      router.push("/login");
+    } catch (error) {
+      console.error(error);
+      alert("Unable to connect to server");
+    }
+  };
 
 
   // -------------------------
@@ -318,19 +651,28 @@ const handleUpdateTask = async (
       <div className="mx-auto max-w-7xl px-6 py-8">
 
         {/* Header */}
-        <header className="mb-8">
-          <p className="text-sm text-slate-400">
-            Task & Time Tracker
-          </p>
+        <header className="mb-8 flex items-start justify-between">
+  <div>
+    <p className="text-sm text-slate-400">
+      Task & Time Tracker
+    </p>
 
-          <h1 className="mt-1 text-3xl font-bold">
-            Welcome, {user.name} 👋
-          </h1>
+    <h1 className="mt-1 text-3xl font-bold">
+      Welcome, {user.name} 👋
+    </h1>
 
-          <p className="mt-2 text-slate-400">
-            {user.email}
-          </p>
-        </header>
+    <p className="mt-2 text-slate-400">
+      {user.email}
+    </p>
+  </div>
+
+  <button
+    onClick={handleLogout}
+    className="rounded-lg border border-slate-700 px-4 py-2 text-sm text-slate-300 hover:bg-slate-800"
+  >
+    Logout
+  </button>
+</header>
 
         {/* Summary Cards */}
         <section className="grid gap-4 md:grid-cols-5">
@@ -481,6 +823,8 @@ const handleUpdateTask = async (
             </form>
           )}
 
+          
+
           {/* Task List */}
           <div className="mt-8 space-y-4">
 
@@ -513,6 +857,14 @@ const handleUpdateTask = async (
                               {task.description}
                             </p>
                           )}
+
+<div className="mt-3 flex items-center gap-2 text-sm text-slate-400">
+  <span>Time tracked:</span>
+
+  <span className="font-medium text-slate-200">
+    {formatTotalTime(task.totalTrackedSeconds ?? 0)}
+  </span>
+</div>
                         </div>
                   
                         {/* Status */}
@@ -541,30 +893,114 @@ const handleUpdateTask = async (
                       </div>
                   
                       {/* Actions */}
-                      <div className="mt-5 flex gap-3">
-                  
-                        <button
-                          onClick={() =>
-                            handleUpdateTask(task.id, {
-                              title: window.prompt(
-                                "Enter new task title:",
-                                task.title
-                              ) || task.title,
-                            })
-                          }
-                          className="rounded-lg border border-slate-700 px-4 py-2 text-sm text-slate-300 hover:bg-slate-800"
-                        >
-                          Edit
-                        </button>
-                  
-                        <button
-                          onClick={() => handleDeleteTask(task.id)}
-                          className="rounded-lg border border-red-900 px-4 py-2 text-sm text-red-400 hover:bg-red-950"
-                        >
-                          Delete
-                        </button>
-                  
-                      </div>
+                      <div className="mt-5 flex flex-wrap gap-3">
+
+  {/* Start / Stop */}
+  {activeTaskId === task.id ? (
+    <button
+      onClick={() => handleStopTimer(task.id)}
+      disabled={timerLoading}
+      className="rounded-lg bg-red-600 px-4 py-2 text-sm font-medium text-white hover:bg-red-500 disabled:opacity-50"
+    >
+      Stop
+    </button>
+  ) : (
+    <button
+      onClick={() => handleStartTimer(task.id)}
+      disabled={
+        timerLoading ||
+        activeTaskId !== null
+      }
+      className="rounded-lg bg-green-600 px-4 py-2 text-sm font-medium text-white hover:bg-green-500 disabled:cursor-not-allowed disabled:opacity-40"
+    >
+      Start
+    </button>
+  )}
+
+  {/* Current Timer */}
+  {activeTaskId === task.id && (
+    <span className="rounded-lg bg-slate-800 px-4 py-2 font-mono text-sm text-green-400">
+      {formatTimer(timerSeconds)}
+    </span>
+  )}
+
+  {/* Edit */}
+  <button
+    onClick={() =>
+      handleUpdateTask(task.id, {
+        title:
+          window.prompt(
+            "Enter new task title:",
+            task.title
+          ) || task.title,
+      })
+    }
+    className="rounded-lg border border-slate-700 px-4 py-2 text-sm text-slate-300 hover:bg-slate-800"
+  >
+    Edit
+  </button>
+
+  {/* Delete */}
+  <button
+    onClick={() => handleDeleteTask(task.id)}
+    className="rounded-lg border border-red-900 px-4 py-2 text-sm text-red-400 hover:bg-red-950"
+  >
+    Delete
+  </button>
+
+  {/* Time History */}
+  <button
+    onClick={() => handleViewTimeLogs(task.id)}
+    className="rounded-lg border border-slate-700 px-4 py-2 text-sm text-slate-300 hover:bg-slate-800"
+  >
+    {expandedTaskId === task.id
+      ? "Hide History"
+      : "Time History"}
+  </button>
+</div>
+
+{/* Time History - OUTSIDE the flex row */}
+{expandedTaskId === task.id && (
+  <div className="mt-4 rounded-lg border border-slate-800 bg-slate-900 p-4">
+    <h4 className="mb-3 font-medium text-white">
+      Time Sessions
+    </h4>
+
+    {timeLogs[task.id]?.length === 0 ? (
+      <p className="text-sm text-slate-500">
+        No time sessions yet.
+      </p>
+    ) : (
+      <div className="space-y-2">
+        {timeLogs[task.id]?.map((log) => (
+          <div
+            key={log.id}
+            className="flex items-center justify-between rounded-lg bg-slate-950 px-3 py-2 text-sm"
+          >
+            <div>
+              <p className="text-slate-300">
+                {new Date(log.startedAt).toLocaleString()}
+              </p>
+
+              {log.endedAt && (
+                <p className="text-xs text-slate-500">
+                  Ended:{" "}
+                  {new Date(log.endedAt).toLocaleString()}
+                </p>
+              )}
+            </div>
+
+            <span className="font-mono text-slate-300">
+              {log.duration !== null
+                ? formatTimer(log.duration)
+                : "Running"}
+            </span>
+          </div>
+        ))}
+      </div>
+    )}
+  </div>
+)}
                     </div>
                   ))
             )}
@@ -572,6 +1008,256 @@ const handleUpdateTask = async (
           </div>
 
         </section>
+
+        {/* =========================
+    Weekly Productivity
+========================= */}
+
+{weeklySummary && (
+  <section className="mt-8 overflow-hidden rounded-2xl border border-slate-800 bg-slate-900">
+    {/* Header */}
+    <div className="border-b border-slate-800 px-6 py-6">
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+        <div>
+          <div className="flex items-center gap-3">
+            <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-indigo-500/10 text-xl">
+              📊
+            </div>
+
+            <div>
+              <h2 className="text-xl font-semibold text-white">
+                Weekly Productivity
+              </h2>
+
+              <p className="mt-1 text-sm text-slate-400">
+                Your time and task activity for this week
+              </p>
+            </div>
+          </div>
+        </div>
+
+        <div className="rounded-lg border border-slate-800 bg-slate-950 px-3 py-2 text-xs text-slate-400">
+          Week of{" "}
+          <span className="font-medium text-slate-200">
+            {new Date(
+              `${weeklySummary.weekStart}T00:00:00`
+            ).toLocaleDateString("en-US", {
+              month: "short",
+              day: "numeric",
+              year: "numeric",
+            })}
+          </span>
+        </div>
+      </div>
+    </div>
+
+    {/* Statistics */}
+    <div className="grid gap-4 p-6 sm:grid-cols-3">
+      {/* Total Time */}
+      <div className="group rounded-xl border border-slate-800 bg-slate-950 p-5 transition hover:border-indigo-500/40">
+        <div className="flex items-center justify-between">
+          <p className="text-sm text-slate-400">
+            Total Tracked Time
+          </p>
+
+          <span className="rounded-lg bg-indigo-500/10 px-2 py-1 text-xs text-indigo-400">
+            TIME
+          </span>
+        </div>
+
+        <p className="mt-4 text-3xl font-bold tracking-tight text-white">
+          {formatWeeklyTime(
+            weeklySummary.totalTrackedSeconds
+          )}
+        </p>
+
+        <p className="mt-2 text-xs text-slate-500">
+          Total time tracked this week
+        </p>
+      </div>
+
+      {/* Tasks Worked On */}
+      <div className="group rounded-xl border border-slate-800 bg-slate-950 p-5 transition hover:border-blue-500/40">
+        <div className="flex items-center justify-between">
+          <p className="text-sm text-slate-400">
+            Tasks Worked On
+          </p>
+
+          <span className="rounded-lg bg-blue-500/10 px-2 py-1 text-xs text-blue-400">
+            TASKS
+          </span>
+        </div>
+
+        <p className="mt-4 text-3xl font-bold tracking-tight text-white">
+          {weeklySummary.tasksWorkedOn}
+        </p>
+
+        <p className="mt-2 text-xs text-slate-500">
+          Unique tasks with tracked time
+        </p>
+      </div>
+
+      {/* Completed */}
+      <div className="group rounded-xl border border-slate-800 bg-slate-950 p-5 transition hover:border-emerald-500/40">
+        <div className="flex items-center justify-between">
+          <p className="text-sm text-slate-400">
+            Completed
+          </p>
+
+          <span className="rounded-lg bg-emerald-500/10 px-2 py-1 text-xs text-emerald-400">
+            DONE
+          </span>
+        </div>
+
+        <p className="mt-4 text-3xl font-bold tracking-tight text-white">
+          {weeklySummary.completedTasks}
+        </p>
+
+        <p className="mt-2 text-xs text-slate-500">
+          Completed tasks
+        </p>
+      </div>
+    </div>
+
+    {/* Weekly Chart */}
+    <div className="px-6 pb-6">
+      <div className="rounded-xl border border-slate-800 bg-slate-950 p-6">
+        <div className="mb-6 flex items-center justify-between">
+          <div>
+            <h3 className="font-semibold text-white">
+              Time Tracked
+            </h3>
+
+            <p className="mt-1 text-xs text-slate-500">
+              Daily activity across the current week
+            </p>
+          </div>
+
+          <span className="text-xs text-slate-500">
+            7 days
+          </span>
+        </div>
+
+        {(() => {
+          const maxSeconds = Math.max(
+            ...weeklySummary.dailyData.map(
+              (day) => day.trackedSeconds
+            ),
+            1
+          );
+
+          return (
+            <div className="grid grid-cols-7 gap-2 sm:gap-4">
+              {weeklySummary.dailyData.map((day) => {
+                const percentage =
+                  (day.trackedSeconds / maxSeconds) * 100;
+
+                const isHighest =
+                  day.trackedSeconds === maxSeconds &&
+                  day.trackedSeconds > 0;
+
+                return (
+                  <div
+                    key={day.date}
+                    className="flex min-w-0 flex-col items-center"
+                  >
+                    {/* Time */}
+                    <span className="mb-3 text-center text-[10px] font-medium text-slate-400 sm:text-xs">
+                      {formatWeeklyTime(
+                        day.trackedSeconds
+                      )}
+                    </span>
+
+                    {/* Bar container */}
+                    <div className="flex h-40 w-full items-end justify-center">
+                      <div className="relative flex h-full w-full max-w-10 items-end justify-center overflow-hidden rounded-t-lg bg-slate-900">
+                        <div
+                          className={`w-full rounded-t-lg transition-all duration-500 ${
+                            isHighest
+                              ? "bg-indigo-400"
+                              : "bg-indigo-500/60"
+                          }`}
+                          style={{
+                            height:
+                              day.trackedSeconds === 0
+                                ? "4px"
+                                : `${Math.max(
+                                    percentage,
+                                    8
+                                  )}%`,
+                          }}
+                        />
+                      </div>
+                    </div>
+
+                    {/* Day */}
+                    <div
+                      className={`mt-3 text-xs font-medium ${
+                        isHighest
+                          ? "text-indigo-400"
+                          : "text-slate-500"
+                      }`}
+                    >
+                      {day.day}
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          );
+        })()}
+      </div>
+    </div>
+
+    {/* Productivity Insight */}
+    {(() => {
+      const mostProductiveDay =
+        weeklySummary.dailyData.reduce(
+          (most, current) =>
+            current.trackedSeconds >
+            most.trackedSeconds
+              ? current
+              : most
+        );
+
+      if (mostProductiveDay.trackedSeconds <= 0) {
+        return null;
+      }
+
+      return (
+        <div className="px-6 pb-6">
+          <div className="flex flex-col gap-4 rounded-xl border border-indigo-500/20 bg-indigo-500/5 p-5 sm:flex-row sm:items-center sm:justify-between">
+            <div>
+              <p className="text-xs font-medium uppercase tracking-wider text-indigo-400">
+                Productivity Insight
+              </p>
+
+              <p className="mt-1 text-sm text-slate-300">
+                Your most productive day was{" "}
+                <span className="font-semibold text-white">
+                  {mostProductiveDay.day}
+                </span>
+                .
+              </p>
+            </div>
+
+            <div className="rounded-lg border border-indigo-500/20 bg-slate-950 px-4 py-3 text-center">
+              <p className="text-xs text-slate-500">
+                Time tracked
+              </p>
+
+              <p className="mt-1 font-mono text-sm font-semibold text-indigo-400">
+                {formatWeeklyTime(
+                  mostProductiveDay.trackedSeconds
+                )}
+              </p>
+            </div>
+          </div>
+        </div>
+      );
+    })()}
+  </section>
+)}
 
       </div>
     </main>

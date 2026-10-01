@@ -1,8 +1,11 @@
 "use client";
 
 import { FormEvent, useState } from "react";
+import { useRouter } from "next/navigation";
 
 export default function LoginPage() {
+  const router = useRouter();
+
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
 
@@ -17,7 +20,7 @@ export default function LoginPage() {
 
     try {
       const response = await fetch(
-        "http://localhost:5000/api/auth/login",
+        `${process.env.NEXT_PUBLIC_API_URL}/api/auth/login`,
         {
           method: "POST",
           headers: {
@@ -38,10 +41,8 @@ export default function LoginPage() {
         return;
       }
 
-      setMessage("Login successful!");
+      router.push("/dashboard");
 
-      // We'll redirect to dashboard in the next step.
-      console.log("Logged in user:", data.user);
     } catch {
       setMessage("Unable to connect to server");
     } finally {

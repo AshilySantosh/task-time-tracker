@@ -6,4 +6,5 @@ const dashboard_controller_1 = require("../controllers/dashboard.controller");
 const router = (0, express_1.Router)();
 router.use(auth_middleware_1.authMiddleware);
 router.get("/daily-summary", dashboard_controller_1.getDailySummaryController);
+router.get("/weekly-summary", dashboard_controller_1.getWeeklySummaryController);
 exports.default = router;

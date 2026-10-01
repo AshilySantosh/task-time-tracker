@@ -1,5 +1,13 @@
 import prisma from "../lib/prisma";
 
+const formatLocalDate = (date: Date) => {
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, "0");
+  const day = String(date.getDate()).padStart(2, "0");
+
+  return `${year}-${month}-${day}`;
+};
+
 export const getDailySummary = async (userId: string) => {
   const now = new Date();
 
@@ -67,5 +75,87 @@ export const getDailySummary = async (userId: string) => {
     inProgressTasks: inProgressTasks.length,
 
     pendingTasks: pendingTasks.length,
+  };
+};
+
+export const getWeeklySummary = async (userId: string) => {
+  const now = new Date();
+
+  // Monday 00:00:00
+  const startOfWeek = new Date(now);
+  const day = startOfWeek.getDay();
+
+  const daysFromMonday = day === 0 ? 6 : day - 1;
+
+  startOfWeek.setDate(startOfWeek.getDate() - daysFromMonday);
+  startOfWeek.setHours(0, 0, 0, 0);
+
+  // Next Monday 00:00:00
+  const startOfNextWeek = new Date(startOfWeek);
+  startOfNextWeek.setDate(startOfNextWeek.getDate() + 7);
+
+  const timeLogs = await prisma.timeLog.findMany({
+    where: {
+      userId,
+      startedAt: {
+        gte: startOfWeek,
+        lt: startOfNextWeek,
+      },
+    },
+  });
+
+  const totalTrackedSeconds = timeLogs.reduce(
+    (total, log) => total + (log.duration ?? 0),
+    0
+  );
+
+  const uniqueTaskIds = new Set(
+    timeLogs.map((log) => log.taskId)
+  );
+
+  const tasks = await prisma.task.findMany({
+    where: {
+      userId,
+    },
+  });
+
+  const completedTasks = tasks.filter(
+    (task) => task.status === "COMPLETED"
+  );
+
+  const dailyData = Array.from({ length: 7 }, (_, index) => {
+    const date = new Date(startOfWeek);
+
+    date.setDate(startOfWeek.getDate() + index);
+
+    const nextDate = new Date(date);
+    nextDate.setDate(date.getDate() + 1);
+
+    const dayLogs = timeLogs.filter(
+      (log) =>
+        log.startedAt >= date &&
+        log.startedAt < nextDate
+    );
+
+    const trackedSeconds = dayLogs.reduce(
+      (total, log) => total + (log.duration ?? 0),
+      0
+    );
+
+    return {
+      date: formatLocalDate(date),
+      day: date.toLocaleDateString("en-US", {
+        weekday: "short",
+      }),
+      trackedSeconds,
+    };
+  });
+
+  return {
+    weekStart: formatLocalDate(startOfWeek),
+    totalTrackedSeconds,
+    tasksWorkedOn: uniqueTaskIds.size,
+    completedTasks: completedTasks.length,
+    dailyData,
   };
 };
