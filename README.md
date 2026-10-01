@@ -4,7 +4,7 @@ A full-stack task and time tracking application that allows users to securely ma
 
 ## 🚀 Live Demo
 
-> Coming soon — deployment in progress.
+> (https://task-time-tracker-gray.vercel.app/login)
 
 ## 📌 Features
 
