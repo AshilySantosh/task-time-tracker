@@ -9,7 +9,7 @@ export const signupController = async (
   res: Response
 ) => {
   try {
-    // 1. Validate request body
+    // Validate request body
     const result = signupSchema.safeParse(req.body);
 
     if (!result.success) {
@@ -20,10 +20,10 @@ export const signupController = async (
       });
     }
 
-    // 2. Call service
+    // Call service
     const user = await signup(result.data);
 
-    // 3. Return created user
+    // Return created user
     return res.status(201).json({
       success: true,
       message: "User registered successfully",
@@ -52,7 +52,7 @@ export const loginController = async (
     res: Response
   ) => {
     try {
-      // 1. Validate request body
+      // Validate request body
       const result = loginSchema.safeParse(req.body);
   
       if (!result.success) {
@@ -63,10 +63,10 @@ export const loginController = async (
         });
       }
   
-      // 2. Authenticate user
+      // Authenticate user
       const { token, user } = await login(result.data);
   
-      // 3. Store JWT in HTTP-only cookie
+      // Store JWT in HTTP-only cookie
       res.cookie("access_token", token, {
         httpOnly: true,
         secure: process.env.NODE_ENV === "production",
@@ -74,7 +74,7 @@ export const loginController = async (
         maxAge: 7 * 24 * 60 * 60 * 1000,
       });
   
-      // 4. Return safe user information
+      // Return safe user information
       return res.status(200).json({
         success: true,
         message: "Login successful",

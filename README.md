@@ -6,6 +6,10 @@ A full-stack task and time tracking application that allows users to securely ma
 
 > (https://task-time-tracker-gray.vercel.app/login)
 
+## Test credentials
+email - testuser@gmail.com
+password - password
+
 ## 📌 Features
 
 ### Authentication
